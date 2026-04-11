@@ -1,0 +1,147 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "host.exp.exponent",
+    "module": "expo.modules.video",
+    "version": "3.0.16",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "files": [
+        {
+          "name": "expo.modules.video-3.0.16.aar",
+          "url": "expo.modules.video-3.0.16.aar",
+          "size": 497928,
+          "sha512": "c2538e64e3106df6f122e8ca32481b600fd43b4f3be681536d7fc9882508d2eaacf485bca90f3d231c5af9e0932bb41d42307302d381cb733dec8808f452e37f",
+          "sha256": "1122cd3b3b92612dda344a8f8b3c17e08580450895693545296d608e9ff24e20",
+          "sha1": "bad01ab04f038ffa6bfd058cabeb5f5c9f4890a6",
+          "md5": "b1352f0050141923f29b691e787a53f7"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib-jdk7",
+          "version": {
+            "requires": "2.1.20"
+          }
+        },
+        {
+          "group": "com.facebook.react",
+          "module": "react-android"
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-session",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-exoplayer",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-exoplayer-dash",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-exoplayer-hls",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-ui",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "androidx.media3",
+          "module": "media3-datasource-okhttp",
+          "version": {
+            "requires": "1.8.0"
+          }
+        },
+        {
+          "group": "androidx.fragment",
+          "module": "fragment",
+          "version": {
+            "requires": "1.6.2"
+          }
+        },
+        {
+          "group": "androidx.fragment",
+          "module": "fragment-ktx",
+          "version": {
+            "requires": "1.6.2"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "expo.modules.video-3.0.16.aar",
+          "url": "expo.modules.video-3.0.16.aar",
+          "size": 497928,
+          "sha512": "c2538e64e3106df6f122e8ca32481b600fd43b4f3be681536d7fc9882508d2eaacf485bca90f3d231c5af9e0932bb41d42307302d381cb733dec8808f452e37f",
+          "sha256": "1122cd3b3b92612dda344a8f8b3c17e08580450895693545296d608e9ff24e20",
+          "sha1": "bad01ab04f038ffa6bfd058cabeb5f5c9f4890a6",
+          "md5": "b1352f0050141923f29b691e787a53f7"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "expo.modules.video-3.0.16-sources.jar",
+          "url": "expo.modules.video-3.0.16-sources.jar",
+          "size": 63831,
+          "sha512": "635168139ac70e74aa0a1746babd72d77c1c34e1a07dff2f5d48ea9ba601736408a04c2d7305f14a6026fdfd02aa814a8397431399817708051e4da9c1f7d116",
+          "sha256": "4411aefed29ead4aa148be56f1ca8824dedcb62c9cbcef74e372efdf7fc7e45b",
+          "sha1": "580b473443d3733c64cfc8b18e9e62285acbefac",
+          "md5": "4bac35b2a764e60e9f8f6937c407de16"
+        }
+      ]
+    }
+  ]
+}

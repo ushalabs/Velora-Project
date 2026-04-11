@@ -1,0 +1,69 @@
+{
+  "name": "@expo/html-elements",
+  "version": "0.12.5",
+  "description": "Universal semantic HTML React components for iOS, Android, web, and desktop",
+  "main": "src/Elements.tsx",
+  "types": "build/Elements.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "build": "expo-module build",
+    "clean": "expo-module clean",
+    "lint": "expo-module lint",
+    "test": "yarn test:babel && yarn test:src",
+    "test:src": "expo-module test",
+    "test:babel": "jest --config babel/jest.config.js",
+    "prepare": "expo-module prepare",
+    "prepublishOnly": "expo-module prepublishOnly",
+    "expo-module": "expo-module"
+  },
+  "keywords": [
+    "expo",
+    "expo-web",
+    "react-native",
+    "react-native-web",
+    "html"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/expo/expo.git",
+    "directory": "packages/html-elements"
+  },
+  "bugs": {
+    "url": "https://github.com/expo/expo/issues"
+  },
+  "author": "650 Industries, Inc.",
+  "license": "MIT",
+  "homepage": "https://github.com/expo/expo/tree/main/packages/html-elements",
+  "jest": {
+    "projects": [
+      {
+        "preset": "jest-expo/web",
+        "setupFilesAfterEnv": [
+          "<rootDir>/jest-setup.js"
+        ],
+        "modulePathIgnorePatterns": [
+          "<rootDir>/babel/"
+        ]
+      },
+      {
+        "preset": "jest-expo/ios",
+        "modulePathIgnorePatterns": [
+          "<rootDir>/babel/"
+        ]
+      },
+      {
+        "preset": "jest-expo/android",
+        "modulePathIgnorePatterns": [
+          "<rootDir>/babel/"
+        ]
+      }
+    ]
+  },
+  "devDependencies": {
+    "expo-module-scripts": "^4.1.6",
+    "@testing-library/jest-dom": "^5.16.5",
+    "@testing-library/react": "^15.0.7",
+    "@testing-library/react-native": "^13.1.0"
+  },
+  "gitHead": "84355076bc31a356aa3d23257f387f221885f53d"
+}

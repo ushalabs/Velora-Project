@@ -1,0 +1,15 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["VideoModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.video.VideoModule"],
+    "publication": {
+      "groupId": "host.exp.exponent",
+      "artifactId": "expo.modules.video",
+      "version": "3.0.16",
+      "repository": "local-maven-repo"
+    }
+  }
+}
