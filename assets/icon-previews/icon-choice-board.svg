@@ -1,0 +1,33 @@
+<svg width="1400" height="980" viewBox="0 0 1400 980" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="980" fill="#FCFBFF"/>
+  <text x="80" y="92" fill="#1F1147" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700">Velora Icon Direction</text>
+  <text x="80" y="132" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="24">App icon preview with a smaller V, plus four possible Android notification icon directions.</text>
+
+  <rect x="72" y="180" width="430" height="640" rx="40" fill="#FFFFFF" stroke="#E9D5FF" stroke-width="4"/>
+  <text x="110" y="244" fill="#2E1065" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">App Icon Preview</text>
+  <text x="110" y="286" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="22">Same Velora look, but the V is reduced and feels less oversized.</text>
+  <image href="app-icon-smaller-v-preview.svg" x="110" y="330" width="350" height="350"/>
+  <text x="110" y="730" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="22">Suggested change: reduce the V by roughly 15 to 18 percent and keep the same purple glass feel.</text>
+
+  <rect x="560" y="180" width="760" height="640" rx="40" fill="#FFFFFF" stroke="#E9D5FF" stroke-width="4"/>
+  <text x="598" y="244" fill="#2E1065" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">Notification Icon Options</text>
+  <text x="598" y="286" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="22">Choose one direction and I will turn it into the final Android small-notification icon.</text>
+
+  <image href="notification-option-a.svg" x="620" y="340" width="140" height="140"/>
+  <text x="608" y="520" fill="#2E1065" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">A</text>
+  <text x="640" y="520" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="20">Chat bubble + V</text>
+
+  <image href="notification-option-b.svg" x="810" y="340" width="140" height="140"/>
+  <text x="798" y="520" fill="#2E1065" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">B</text>
+  <text x="830" y="520" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="20">Circle + V</text>
+
+  <image href="notification-option-c.svg" x="1000" y="340" width="140" height="140"/>
+  <text x="988" y="520" fill="#2E1065" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">C</text>
+  <text x="1020" y="520" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="20">Rounded square + dot</text>
+
+  <image href="notification-option-d.svg" x="1190" y="340" width="140" height="140"/>
+  <text x="1178" y="520" fill="#2E1065" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">D</text>
+  <text x="1210" y="520" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="20">Bubble + underline</text>
+
+  <text x="620" y="620" fill="#6B6287" font-family="Arial, Helvetica, sans-serif" font-size="21">For Android status-bar notifications, the final exported icon will be simplified to white on transparent background.</text>
+</svg>

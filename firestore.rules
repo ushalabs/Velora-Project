@@ -1,0 +1,677 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isRequestParticipant(data) {
+      return signedIn()
+        && (
+          data.senderId == request.auth.uid
+          || data.receiverId == request.auth.uid
+        );
+    }
+
+    function isOwnUserDoc(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedUserKeys() {
+      return request.resource.data.keys().hasOnly([
+        'uid',
+        'email',
+        'username',
+        'usernameLower',
+        'avatar',
+        'bio',
+        'expoPushTokens',
+        'totalStoriesPosted',
+        'storyHiddenFriendIds',
+        'showActiveStatus',
+        'isActive',
+        'lastActiveAt',
+        'lastPushTokenAt',
+        'usernameChangedAt',
+        'updatedAt',
+        'createdAt'
+      ]);
+    }
+
+    function isValidUserDocument(userId) {
+      return hasOnlyAllowedUserKeys()
+        && request.resource.data.uid == userId
+        && request.resource.data.email is string
+        && request.resource.data.username is string
+        && request.resource.data.username.size() > 0
+        && request.resource.data.username.size() <= 50
+        && request.resource.data.usernameLower is string
+        && request.resource.data.avatar is string
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 180
+        && (
+          !('expoPushTokens' in request.resource.data)
+          || request.resource.data.expoPushTokens is list
+        )
+        && (
+          !('totalStoriesPosted' in request.resource.data)
+          || request.resource.data.totalStoriesPosted is int
+        )
+        && (
+          !('storyHiddenFriendIds' in request.resource.data)
+          || request.resource.data.storyHiddenFriendIds is list
+        )
+        && (
+          !('usernameChangedAt' in request.resource.data)
+          || request.resource.data.usernameChangedAt is int
+        )
+        && (
+          !('showActiveStatus' in request.resource.data)
+          || request.resource.data.showActiveStatus is bool
+        )
+        && (
+          !('isActive' in request.resource.data)
+          || request.resource.data.isActive is bool
+        )
+        && (
+          !('lastActiveAt' in request.resource.data)
+          || request.resource.data.lastActiveAt is int
+        )
+        && (
+          !('lastPushTokenAt' in request.resource.data)
+          || request.resource.data.lastPushTokenAt is string
+        );
+    }
+
+    function hasOnlyAllowedProfilePostKeys() {
+      return request.resource.data.keys().hasOnly([
+        'ownerId',
+        'ownerUsername',
+        'ownerAvatar',
+        'imageUrl',
+        'caption',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function isValidProfilePostDocument() {
+      return hasOnlyAllowedProfilePostKeys()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerUsername is string
+        && request.resource.data.ownerUsername.size() > 0
+        && request.resource.data.ownerUsername.size() <= 50
+        && request.resource.data.ownerAvatar is string
+        && request.resource.data.imageUrl is string
+        && request.resource.data.imageUrl.size() > 0
+        && request.resource.data.caption is string
+        && request.resource.data.caption.size() <= 220;
+    }
+
+    function directConversationId(otherUserId) {
+      return request.auth.uid < otherUserId
+        ? request.auth.uid + '__' + otherUserId
+        : otherUserId + '__' + request.auth.uid;
+    }
+
+    function isFriendWith(otherUserId) {
+      return signedIn()
+        && otherUserId is string
+        && exists(/databases/$(database)/documents/conversations/$(directConversationId(otherUserId)))
+        && get(/databases/$(database)/documents/conversations/$(directConversationId(otherUserId))).data.type == 'direct'
+        && get(/databases/$(database)/documents/conversations/$(directConversationId(otherUserId))).data.isFriend != false;
+    }
+
+    function canCommentOnProfilePost(postId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/profilePosts/$(postId))
+        && (
+          get(/databases/$(database)/documents/profilePosts/$(postId)).data.ownerId == request.auth.uid
+          || isFriendWith(get(/databases/$(database)/documents/profilePosts/$(postId)).data.ownerId)
+        );
+    }
+
+    function isTopLevelComment(postId, commentId) {
+      return exists(/databases/$(database)/documents/profilePosts/$(postId)/comments/$(commentId))
+        && get(/databases/$(database)/documents/profilePosts/$(postId)/comments/$(commentId)).data.parentCommentId == '';
+    }
+
+    function isConversationParticipant(data) {
+      return signedIn()
+        && data.memberIds is list
+        && data.memberIds.hasAny([request.auth.uid]);
+    }
+
+    function hasOnlyAllowedConversationKeys() {
+      return request.resource.data.keys().hasOnly([
+        'type',
+        'title',
+        'avatar',
+        'memberIds',
+        'adminIds',
+        'hiddenFor',
+        'createdBy',
+        'createdAt',
+        'updatedAt',
+        'lastMessageText',
+        'lastMessageSenderId',
+        'isFriend',
+        'requestPending',
+        'requestInitiatorId',
+        'requestRecipientId',
+        'unreadCountBy',
+        'typingBy',
+        'lastSeenBy',
+        'nicknamesByUserId'
+      ]);
+    }
+
+    function hasValidConversationBase() {
+      return hasOnlyAllowedConversationKeys()
+        && request.resource.data.type in ['direct', 'group']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.avatar is string
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() >= 2
+        && request.resource.data.adminIds is list
+        && request.resource.data.adminIds.size() >= 1
+        && request.resource.data.hiddenFor is list
+        && request.resource.data.createdBy is string
+        && request.resource.data.createdBy.size() > 0
+        && request.resource.data.lastMessageText is string
+        && request.resource.data.lastMessageText.size() <= 300
+        && request.resource.data.lastMessageSenderId is string
+        && request.resource.data.isFriend is bool
+        && request.resource.data.requestPending is bool
+        && request.resource.data.requestInitiatorId is string
+        && request.resource.data.requestRecipientId is string
+        && (!('unreadCountBy' in request.resource.data) || request.resource.data.unreadCountBy is map)
+        && (!('typingBy' in request.resource.data) || request.resource.data.typingBy is map)
+        && (!('lastSeenBy' in request.resource.data) || request.resource.data.lastSeenBy is map)
+        && (!('nicknamesByUserId' in request.resource.data) || request.resource.data.nicknamesByUserId is map)
+        && request.resource.data.memberIds.hasAny([request.auth.uid]);
+    }
+
+    function isValidDirectConversation(conversationId) {
+      return request.resource.data.type == 'direct'
+        && request.resource.data.memberIds.size() == 2
+        && request.resource.data.adminIds.size() == 2
+        && request.resource.data.adminIds.hasAll(request.resource.data.memberIds)
+        && request.resource.data.memberIds.hasAll(request.resource.data.adminIds)
+        && request.resource.data.title == ''
+        && request.resource.data.avatar == ''
+        && request.resource.data.requestInitiatorId is string
+        && request.resource.data.requestRecipientId is string
+        && conversationId == (
+          request.resource.data.memberIds[0] < request.resource.data.memberIds[1]
+            ? request.resource.data.memberIds[0] + '__' + request.resource.data.memberIds[1]
+            : request.resource.data.memberIds[1] + '__' + request.resource.data.memberIds[0]
+        );
+    }
+
+    function isValidGroupConversation() {
+      return request.resource.data.type == 'group'
+        && request.resource.data.title.size() > 0
+        && request.resource.data.adminIds.hasAny([request.auth.uid])
+        && request.resource.data.memberIds.hasAny([request.auth.uid]);
+    }
+
+    function isSameDirectMembers() {
+      return resource.data.memberIds.size() == 2
+        && request.resource.data.memberIds.size() == 2
+        && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+        && resource.data.memberIds.hasAll(request.resource.data.memberIds)
+        && request.resource.data.adminIds.hasAll(request.resource.data.memberIds)
+        && request.resource.data.memberIds.hasAll(request.resource.data.adminIds);
+    }
+
+    function isGroupAdminUpdate() {
+      return resource.data.type == 'group'
+        && resource.data.adminIds is list
+        && resource.data.adminIds.hasAny([request.auth.uid]);
+    }
+
+    function isGroupMemberMetadataUpdate() {
+      return resource.data.type == 'group'
+        && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+        && resource.data.memberIds.hasAll(request.resource.data.memberIds)
+        && request.resource.data.adminIds.hasAll(resource.data.adminIds)
+        && resource.data.adminIds.hasAll(request.resource.data.adminIds);
+    }
+
+    function isGroupSelfLeave() {
+      return resource.data.type == 'group'
+        && resource.data.memberIds is list
+        && resource.data.memberIds.hasAny([request.auth.uid])
+        && request.resource.data.memberIds is list
+        && !request.resource.data.memberIds.hasAny([request.auth.uid]);
+    }
+
+    function isConversationParticipantById(conversationId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/conversations/$(conversationId))
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds is list
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.memberIds.hasAny([request.auth.uid]);
+    }
+
+    function hasOnlyAllowedMessageKeys() {
+      return request.resource.data.keys().hasOnly([
+        'clientMessageId',
+        'clientCreatedAt',
+        'type',
+        'text',
+        'mediaUrl',
+        'durationMs',
+        'replyTo',
+        'senderId',
+        'senderUsername',
+        'createdAt',
+        'editedAt',
+        'deletedForAll',
+        'deletedFor',
+        'reactions'
+      ]);
+    }
+
+    // Phase 1 hardening:
+    // Keep the app stable with an authenticated-only baseline everywhere,
+    // but lock friend requests properly as our first controlled slice.
+
+    match /users/{userId} {
+      allow read: if signedIn();
+
+      allow create: if isOwnUserDoc(userId)
+        && isValidUserDocument(userId);
+
+      allow update: if isOwnUserDoc(userId)
+        && isValidUserDocument(userId)
+        && resource.data.uid == request.resource.data.uid
+        && (
+          !('totalStoriesPosted' in resource.data)
+          || !('totalStoriesPosted' in request.resource.data)
+          || request.resource.data.totalStoriesPosted == resource.data.totalStoriesPosted
+          || request.resource.data.totalStoriesPosted == resource.data.totalStoriesPosted + 1
+        );
+
+      allow delete: if false;
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if isRequestParticipant(resource.data);
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'senderId',
+          'senderUsername',
+          'senderAvatar',
+          'receiverId',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.receiverId is string
+        && request.resource.data.receiverId != request.auth.uid
+        && request.resource.data.senderUsername is string
+        && request.resource.data.senderUsername.size() > 0
+        && request.resource.data.senderUsername.size() <= 50
+        && request.resource.data.senderAvatar is string;
+
+      allow update: if false;
+
+      allow delete: if isRequestParticipant(resource.data);
+    }
+
+    match /messageRequests/{requestId} {
+      allow read: if isRequestParticipant(resource.data);
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'senderId',
+          'senderUsername',
+          'senderAvatar',
+          'receiverId',
+          'initialMessage',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.receiverId is string
+        && request.resource.data.receiverId != request.auth.uid
+        && request.resource.data.senderUsername is string
+        && request.resource.data.senderUsername.size() > 0
+        && request.resource.data.senderUsername.size() <= 50
+        && request.resource.data.senderAvatar is string
+        && request.resource.data.initialMessage is string
+        && request.resource.data.initialMessage.size() > 0
+        && request.resource.data.initialMessage.size() <= 300;
+
+      allow update: if false;
+
+      allow delete: if isRequestParticipant(resource.data);
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isConversationParticipant(resource.data);
+
+      allow create: if signedIn()
+        && hasValidConversationBase()
+        && (
+          isValidDirectConversation(conversationId)
+          || isValidGroupConversation()
+        );
+
+      allow update: if isConversationParticipant(resource.data)
+        && hasValidConversationBase()
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          (
+            resource.data.type == 'direct'
+            && isSameDirectMembers()
+          )
+          || isGroupMemberMetadataUpdate()
+          || isGroupAdminUpdate()
+          || isGroupSelfLeave()
+        );
+
+      allow delete: if isConversationParticipant(resource.data)
+        && resource.data.type == 'direct';
+
+      match /messages/{messageId} {
+        allow read: if isConversationParticipantById(conversationId);
+
+        allow create: if isConversationParticipantById(conversationId)
+          && hasOnlyAllowedMessageKeys()
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderUsername is string
+          && request.resource.data.senderUsername.size() > 0
+          && request.resource.data.senderUsername.size() <= 50
+          && request.resource.data.type in ['text', 'image', 'video', 'audio', 'sticker', 'system']
+          && request.resource.data.text is string
+          && request.resource.data.mediaUrl is string
+          && request.resource.data.durationMs is int
+          && (
+            !('reactions' in request.resource.data)
+            || request.resource.data.reactions is list
+          )
+          && (
+            !('clientCreatedAt' in request.resource.data)
+            || request.resource.data.clientCreatedAt is int
+          )
+          && (
+            !('deletedForAll' in request.resource.data)
+            || request.resource.data.deletedForAll == false
+          )
+          && (
+            !('deletedFor' in request.resource.data)
+            || request.resource.data.deletedFor is list
+          );
+
+        allow update: if isConversationParticipantById(conversationId)
+          && hasOnlyAllowedMessageKeys()
+          && request.resource.data.senderId == resource.data.senderId
+          && request.resource.data.senderUsername == resource.data.senderUsername
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.clientMessageId == resource.data.clientMessageId
+          && request.resource.data.clientCreatedAt == resource.data.clientCreatedAt
+          && request.resource.data.replyTo == resource.data.replyTo
+          && request.resource.data.durationMs == resource.data.durationMs
+          && (
+            (
+              resource.data.senderId == request.auth.uid
+              && (
+                (
+                  resource.data.type == 'text'
+                  && request.resource.data.mediaUrl == resource.data.mediaUrl
+                  && request.resource.data.durationMs == resource.data.durationMs
+                  && request.resource.data.deletedForAll == resource.data.deletedForAll
+                  && request.resource.data.reactions == resource.data.reactions
+                )
+                || request.resource.data.deletedForAll == true
+              )
+            )
+            || (
+              request.resource.data.deletedFor is list
+              && request.resource.data.deletedFor.hasAny([request.auth.uid])
+              && request.resource.data.deletedForAll == resource.data.deletedForAll
+              && request.resource.data.text == resource.data.text
+              && request.resource.data.mediaUrl == resource.data.mediaUrl
+              && request.resource.data.reactions == resource.data.reactions
+              && (
+                !('deletedFor' in resource.data)
+                || request.resource.data.deletedFor.hasAll(resource.data.deletedFor)
+              )
+            )
+            || (
+              request.resource.data.text == resource.data.text
+              && request.resource.data.mediaUrl == resource.data.mediaUrl
+              && request.resource.data.deletedForAll == resource.data.deletedForAll
+              && request.resource.data.deletedFor == resource.data.deletedFor
+              && request.resource.data.editedAt == resource.data.editedAt
+              && request.resource.data.reactions is list
+            )
+          );
+
+        allow delete: if false;
+      }
+    }
+
+    match /stories/{storyId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerUsername is string
+        && request.resource.data.ownerAvatar is string
+        && request.resource.data.type in ['text', 'image', 'video']
+        && request.resource.data.text is string
+        && request.resource.data.mediaUrl is string
+        && request.resource.data.expiresAt is int;
+
+      allow update: if signedIn()
+        && resource.data.ownerId != request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.ownerUsername == resource.data.ownerUsername
+        && request.resource.data.ownerAvatar == resource.data.ownerAvatar
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.text == resource.data.text
+        && request.resource.data.mediaUrl == resource.data.mediaUrl
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views', 'likes']);
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.recipientUserId == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'recipientUserId',
+          'actorId',
+          'actorUsername',
+          'actorAvatar',
+          'type',
+          'title',
+          'body',
+          'entityId',
+          'secondaryEntityId',
+          'targetUserId',
+          'isRead',
+          'createdAt'
+        ])
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.recipientUserId is string
+        && request.resource.data.recipientUserId != request.auth.uid
+        && request.resource.data.actorUsername is string
+        && request.resource.data.actorUsername.size() > 0
+        && request.resource.data.actorUsername.size() <= 50
+        && request.resource.data.actorAvatar is string
+        && request.resource.data.type is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 200
+        && request.resource.data.entityId is string
+        && request.resource.data.secondaryEntityId is string
+        && request.resource.data.targetUserId is string
+        && request.resource.data.isRead == false;
+
+      allow update: if signedIn()
+        && resource.data.recipientUserId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'recipientUserId',
+          'actorId',
+          'actorUsername',
+          'actorAvatar',
+          'type',
+          'title',
+          'body',
+          'entityId',
+          'secondaryEntityId',
+          'targetUserId',
+          'isRead',
+          'createdAt'
+        ])
+        && request.resource.data.recipientUserId == resource.data.recipientUserId
+        && request.resource.data.actorId == resource.data.actorId
+        && request.resource.data.actorUsername == resource.data.actorUsername
+        && request.resource.data.actorAvatar == resource.data.actorAvatar
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.title == resource.data.title
+        && request.resource.data.body == resource.data.body
+        && request.resource.data.entityId == resource.data.entityId
+        && request.resource.data.secondaryEntityId == resource.data.secondaryEntityId
+        && request.resource.data.targetUserId == resource.data.targetUserId
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if false;
+    }
+
+    match /profilePosts/{postId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && isValidProfilePostDocument();
+
+      allow update: if false;
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /likes/{userId} {
+        allow read: if signedIn();
+
+        allow create: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly([
+            'userId',
+            'username',
+            'avatar',
+            'createdAt'
+          ])
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.username is string
+          && request.resource.data.username.size() > 0
+          && request.resource.data.username.size() <= 50
+          && request.resource.data.avatar is string;
+
+        allow update: if false;
+
+        allow delete: if signedIn() && request.auth.uid == userId;
+      }
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+
+        allow create: if canCommentOnProfilePost(postId)
+          && request.resource.data.keys().hasOnly([
+            'userId',
+            'username',
+            'avatar',
+            'text',
+            'parentCommentId',
+            'replyToUsername',
+            'createdAt'
+          ])
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.username is string
+          && request.resource.data.username.size() > 0
+          && request.resource.data.username.size() <= 50
+          && request.resource.data.avatar is string
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 300
+          && request.resource.data.parentCommentId is string
+          && request.resource.data.replyToUsername is string
+          && request.resource.data.replyToUsername.size() <= 50
+          && (
+            request.resource.data.parentCommentId == ''
+            || (
+              request.resource.data.replyToUsername.size() > 0
+              && isTopLevelComment(postId, request.resource.data.parentCommentId)
+            )
+          );
+
+        allow update: if signedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'userId',
+            'username',
+            'avatar',
+            'text',
+            'parentCommentId',
+            'replyToUsername',
+            'createdAt',
+            'editedAt'
+          ])
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.username == resource.data.username
+          && request.resource.data.avatar == resource.data.avatar
+          && request.resource.data.parentCommentId == resource.data.parentCommentId
+          && request.resource.data.replyToUsername == resource.data.replyToUsername
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 300;
+
+        allow delete: if signedIn()
+          && (
+            resource.data.userId == request.auth.uid
+            || get(/databases/$(database)/documents/profilePosts/$(postId)).data.ownerId == request.auth.uid
+          );
+
+        match /likes/{userId} {
+          allow read: if signedIn();
+
+          allow create: if signedIn()
+            && request.auth.uid == userId
+            && request.resource.data.keys().hasOnly([
+              'userId',
+              'username',
+              'avatar',
+              'createdAt'
+            ])
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.username is string
+            && request.resource.data.username.size() > 0
+            && request.resource.data.username.size() <= 50
+            && request.resource.data.avatar is string;
+
+          allow update: if false;
+
+          allow delete: if signedIn() && request.auth.uid == userId;
+        }
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if signedIn();
+    }
+  }
+}

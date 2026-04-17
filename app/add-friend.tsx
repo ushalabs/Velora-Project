@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import {
+  Keyboard,
+  KeyboardEvent,
+  Platform,
   View,
   Text,
   TextInput,
@@ -7,45 +10,75 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
-  Alert,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Search, ArrowLeft, UserPlus, Check, AlertCircle, X } from 'lucide-react-native';
+import { Search, ArrowLeft, UserPlus, Check, AlertCircle, X, MessageCircle } from 'lucide-react-native';
 import { router } from "expo-router";
 import { auth } from '@/lib/firebase';
 import {
   createFriendRequest,
+  createMessageRequest,
   findUserByUsername,
-  getRelationshipState,
+  getUserConnectionState,
   type FoundUser,
+  type UserConnectionState,
 } from '@/lib/firestore';
+import { sendUserPushNotification } from '@/lib/push-api';
+import { useThemedAlert } from '@/components/themed-alert-provider';
 
 type SearchState =
   | "idle"
   | "searching"
-  | "found"
+  | "result"
   | "not-found"
-  | "already-friends"
-  | "request-sent"
-  | "request-received"
   | "yourself";
 
 export default function AddFriendScreen() {
+  const { showAlert } = useThemedAlert();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [foundUser, setFoundUser] = useState<FoundUser | null>(null);
+  const [connectionState, setConnectionState] = useState<UserConnectionState | null>(null);
+  const [showMessageComposer, setShowMessageComposer] = useState(false);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [isSendingMessageRequest, setIsSendingMessageRequest] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  React.useEffect(() => {
+    const handleKeyboardShow = (event: KeyboardEvent) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    };
+
+    const handleKeyboardHide = () => {
+      setKeyboardHeight(0);
+    };
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSubscription = Keyboard.addListener(showEvent, handleKeyboardShow);
+    const hideSubscription = Keyboard.addListener(hideEvent, handleKeyboardHide);
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const handleSearch = async () => {
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
-      Alert.alert('Error', 'You need to sign in again.');
+      showAlert('Error', 'You need to sign in again.');
       return;
     }
 
-    if (!searchQuery.trim()) {
+      if (!searchQuery.trim()) {
       setSearchState("idle");
       setFoundUser(null);
+      setConnectionState(null);
       return;
     }
 
@@ -57,28 +90,23 @@ export default function AddFriendScreen() {
       if (!user) {
         setSearchState("not-found");
         setFoundUser(null);
+        setConnectionState(null);
         return;
       }
 
       if (user.id === currentUser.uid) {
         setSearchState("yourself");
         setFoundUser(null);
+        setConnectionState(null);
         return;
       }
 
-      const relationship = await getRelationshipState(currentUser.uid, user.id);
+      const nextConnectionState = await getUserConnectionState(currentUser.uid, user.id);
       setFoundUser(user);
-      if (relationship === 'friends') {
-        setSearchState('already-friends');
-      } else if (relationship === 'outgoing-request') {
-        setSearchState('request-sent');
-      } else if (relationship === 'incoming-request') {
-        setSearchState('request-received');
-      } else {
-        setSearchState("found");
-      }
+      setConnectionState(nextConnectionState);
+      setSearchState("result");
     } catch {
-      Alert.alert('Error', 'Failed to search for that user.');
+      showAlert('Error', 'Failed to search for that user.');
       setSearchState("idle");
     }
   };
@@ -87,21 +115,80 @@ export default function AddFriendScreen() {
     const currentUser = auth.currentUser;
 
     if (!currentUser || !foundUser) {
-      Alert.alert('Error', 'Missing user information. Please try again.');
+      showAlert('Error', 'Missing user information. Please try again.');
       return;
     }
 
     try {
       await createFriendRequest(currentUser, foundUser);
-      setSearchState("request-sent");
+      await sendUserPushNotification({
+        recipientUserIds: [foundUser.id],
+        title: `${currentUser.displayName?.trim() || 'Someone'} sent you a friend request`,
+        body: 'Open Velora to accept or decline it.',
+        data: {
+          screen: 'friends',
+          type: 'friend-request',
+        },
+      }).catch(() => {});
+      setConnectionState((currentState) =>
+        currentState
+          ? {
+              ...currentState,
+              outgoingFriendRequest: true,
+            }
+          : currentState
+      );
     } catch {
-      Alert.alert('Error', 'Failed to send friend request. Please try again.');
+      showAlert('Error', 'Failed to send friend request. Please try again.');
+    }
+  };
+
+  const handleDirectMessage = async () => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser || !foundUser) {
+      showAlert('Error', 'Missing user information. Please try again.');
+      return;
+    }
+
+    try {
+      setIsSendingMessageRequest(true);
+      await createMessageRequest(currentUser, foundUser, messageDraft);
+      await sendUserPushNotification({
+        recipientUserIds: [foundUser.id],
+        title: `${currentUser.displayName?.trim() || 'Someone'} sent you a message request`,
+        body: 'Open Velora to accept or decline it.',
+        data: {
+          screen: 'friends',
+          type: 'message-request',
+        },
+      }).catch(() => {});
+      setConnectionState((currentState) =>
+        currentState
+          ? {
+              ...currentState,
+              outgoingMessageRequest: true,
+            }
+          : currentState
+      );
+      setMessageDraft('');
+      setShowMessageComposer(false);
+    } catch {
+      showAlert('Error', 'Failed to send message request. Please try again.');
+    } finally {
+      setIsSendingMessageRequest(false);
     }
   };
 
   const openChat = () => {
     if (foundUser) {
       router.push({ pathname: '/chat/[id]', params: { id: foundUser.id } });
+    }
+  };
+
+  const openProfile = () => {
+    if (foundUser) {
+      router.push({ pathname: '/user/[id]', params: { id: foundUser.id } });
     }
   };
 
@@ -127,126 +214,119 @@ export default function AddFriendScreen() {
           </View>
         );
 
-      case "found":
+      case "result":
         return (
           <View className="pt-8">
             <Text className="mb-4 px-6 font-semibold text-foreground">
               User Found
             </Text>
             <View className="mx-6 rounded-2xl border border-border bg-card p-5">
-              <View className="flex-row items-center gap-4">
-                {renderAvatar(foundUser)}
-                <View className="flex-1">
-                  <Text className="text-lg font-bold text-foreground">
-                    {foundUser?.username}
-                  </Text>
-                </View>
-              </View>
-
               <TouchableOpacity
-                onPress={handleAddFriend}
-                className="mt-5 flex-row items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3"
+                onPress={openProfile}
+                activeOpacity={0.85}
+                className="flex-row items-center gap-4"
               >
-                <UserPlus size={20} color="#FFFFFF" />
-                <Text className="text-base font-semibold text-primary-foreground">
-                  Add Friend
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-
-      case "already-friends":
-        return (
-          <View className="pt-8">
-            <Text className="mb-4 px-6 font-semibold text-foreground">
-              Result
-            </Text>
-            <View className="mx-6 rounded-2xl border border-border bg-card p-5">
-              <View className="flex-row items-center gap-4">
                 {renderAvatar(foundUser)}
                 <View className="flex-1">
                   <Text className="text-lg font-bold text-foreground">
                     {foundUser?.username}
                   </Text>
-                  <View className="mt-1 flex-row items-center gap-2">
-                    <Check className="text-green-500" size={16} />
-                    <Text className="text-sm text-green-500">
-                      Friends
+                  {connectionState?.isFriend ? (
+                    <View className="mt-1 flex-row items-center gap-2">
+                      <Check className="text-green-500" size={16} />
+                      <Text className="text-sm text-green-500">
+                        Friend
+                      </Text>
+                    </View>
+                  ) : connectionState?.hasDirectMessage ? (
+                    <Text className="mt-1 text-sm text-muted-foreground">
+                      Already in your DMs
                     </Text>
-                  </View>
+                  ) : connectionState?.incomingFriendRequest ? (
+                    <Text className="mt-1 text-sm text-muted-foreground">
+                      Sent you a friend request
+                    </Text>
+                  ) : connectionState?.outgoingFriendRequest ? (
+                    <Text className="mt-1 text-sm text-muted-foreground">
+                      Friend request already sent
+                    </Text>
+                  ) : connectionState?.incomingMessageRequest ? (
+                    <Text className="mt-1 text-sm text-muted-foreground">
+                      Sent you a message request
+                    </Text>
+                  ) : connectionState?.outgoingMessageRequest ? (
+                    <Text className="mt-1 text-sm text-muted-foreground">
+                      Message request already sent
+                    </Text>
+                  ) : null}
                 </View>
-              </View>
-
-              <View className="mt-4 flex-row items-start gap-3 rounded-lg bg-muted/50 p-3">
-                <Check className="mt-0.5 text-primary" size={18} />
-                <Text className="flex-1 text-sm text-muted-foreground">
-                  You&apos;re already connected with {foundUser?.username}.
-                  Start chatting!
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={openChat}
-                className="mt-4 flex-row items-center justify-center gap-2 rounded-xl bg-secondary px-6 py-3"
-              >
-                <Text className="text-base font-semibold text-secondary-foreground">
-                  Open Chat
-                </Text>
               </TouchableOpacity>
-            </View>
-          </View>
-        );
 
-      case "request-sent":
-        return (
-          <View className="pt-8">
-            <Text className="mb-4 px-6 font-semibold text-foreground">
-              Request Sent
-            </Text>
-            <View className="mx-6 rounded-2xl border border-border bg-card p-5">
-              <View className="flex-row items-center gap-4">
-                {renderAvatar(foundUser)}
-                <View className="flex-1">
-                  <Text className="text-lg font-bold text-foreground">
-                    {foundUser?.username}
-                  </Text>
-                  <Text className="mt-1 text-sm text-muted-foreground">
-                    Waiting for them to accept your request
-                  </Text>
-                </View>
+              <View className="mt-5 gap-3">
+                {connectionState?.hasDirectMessage || connectionState?.isFriend ? (
+                  <TouchableOpacity
+                    onPress={openChat}
+                    className="flex-row items-center justify-center gap-2 rounded-xl bg-secondary px-6 py-3"
+                  >
+                    <Text className="text-base font-semibold text-secondary-foreground">
+                      Open Chat
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {!connectionState?.isFriend ? (
+                  <TouchableOpacity
+                    onPress={handleAddFriend}
+                    disabled={Boolean(connectionState?.outgoingFriendRequest || connectionState?.incomingFriendRequest)}
+                    className={`flex-row items-center justify-center gap-2 rounded-xl px-6 py-3 ${
+                      connectionState?.outgoingFriendRequest || connectionState?.incomingFriendRequest
+                        ? 'bg-muted'
+                        : 'bg-primary'
+                    }`}
+                  >
+                    <UserPlus size={20} color="#FFFFFF" />
+                    <Text className="text-base font-semibold text-primary-foreground">
+                      {connectionState?.incomingFriendRequest
+                        ? 'Review Friend Request'
+                        : connectionState?.outgoingFriendRequest
+                          ? 'Friend Request Sent'
+                          : 'Add Friend'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {!connectionState?.hasDirectMessage ? (
+                  <TouchableOpacity
+                    onPress={() => setShowMessageComposer(true)}
+                    disabled={Boolean(connectionState?.outgoingMessageRequest || connectionState?.incomingMessageRequest)}
+                    className={`flex-row items-center justify-center gap-2 rounded-xl border border-border px-6 py-3 ${
+                      connectionState?.outgoingMessageRequest || connectionState?.incomingMessageRequest
+                        ? 'bg-muted'
+                        : 'bg-card'
+                    }`}
+                  >
+                    <MessageCircle size={20} color="#111827" />
+                    <Text className="text-base font-semibold text-foreground">
+                      {connectionState?.incomingMessageRequest
+                        ? 'Review Message Request'
+                        : connectionState?.outgoingMessageRequest
+                          ? 'Message Request Sent'
+                          : 'Direct Message'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {connectionState?.incomingFriendRequest || connectionState?.incomingMessageRequest ? (
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/friends')}
+                    className="flex-row items-center justify-center gap-2 rounded-xl bg-secondary px-6 py-3"
+                  >
+                    <Text className="text-base font-semibold text-secondary-foreground">
+                      Review Requests
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
-            </View>
-          </View>
-        );
-
-      case "request-received":
-        return (
-          <View className="pt-8">
-            <Text className="mb-4 px-6 font-semibold text-foreground">
-              Incoming Request
-            </Text>
-            <View className="mx-6 rounded-2xl border border-border bg-card p-5">
-              <View className="flex-row items-center gap-4">
-                {renderAvatar(foundUser)}
-                <View className="flex-1">
-                  <Text className="text-lg font-bold text-foreground">
-                    {foundUser?.username}
-                  </Text>
-                  <Text className="mt-1 text-sm text-muted-foreground">
-                    This user already sent you a friend request
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => router.push('/(tabs)/friends')}
-                className="mt-4 flex-row items-center justify-center gap-2 rounded-xl bg-secondary px-6 py-3"
-              >
-                <Text className="text-base font-semibold text-secondary-foreground">
-                  Review Requests
-                </Text>
-              </TouchableOpacity>
             </View>
           </View>
         );
@@ -298,13 +378,12 @@ export default function AddFriendScreen() {
             <View className="mb-6 h-24 w-24 items-center justify-center rounded-full bg-muted">
               <Search className="text-muted-foreground" size={48} />
             </View>
-            <Text className="mb-3 text-center text-xl font-bold text-foreground">
-              Find Friends
-            </Text>
-            <Text className="text-center text-base leading-relaxed text-muted-foreground">
-              Search for friends by their exact username to connect and start
-              chatting.
-            </Text>
+              <Text className="mb-3 text-center text-xl font-bold text-foreground">
+              Find People
+              </Text>
+              <Text className="text-center text-base leading-relaxed text-muted-foreground">
+              Search by exact username to send a friend request or a message request.
+              </Text>
           </View>
         );
     }
@@ -362,6 +441,69 @@ export default function AddFriendScreen() {
 
         {renderSearchResult()}
       </ScrollView>
+
+      <Modal
+        visible={showMessageComposer}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMessageComposer(false)}
+      >
+        <Pressable className="flex-1 bg-black/40" onPress={() => setShowMessageComposer(false)}>
+          <Pressable className="mt-auto rounded-t-[32px] bg-background px-6 pb-10 pt-6">
+              <View className="mb-5 flex-row items-center justify-between">
+                <Text className="text-2xl font-bold text-foreground">Direct Message</Text>
+                <TouchableOpacity
+                  onPress={() => setShowMessageComposer(false)}
+                  className="rounded-full bg-secondary px-3 py-2"
+                >
+                  <Text className="font-semibold text-foreground">Close</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text className="mb-3 text-sm text-muted-foreground">
+                Send the first message with your request to {foundUser?.username}.
+              </Text>
+
+              <View
+                style={{
+                  marginBottom: keyboardHeight > 0 ? Math.max(keyboardHeight - 24, 0) : 0,
+                }}
+              >
+                <TextInput
+                  value={messageDraft}
+                  onChangeText={setMessageDraft}
+                  placeholder="Write your first message..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  maxLength={300}
+                  className="min-h-[120px] rounded-2xl border border-border bg-input px-4 py-4 text-base text-foreground"
+                />
+
+                <TouchableOpacity
+                  onPress={handleDirectMessage}
+                  disabled={isSendingMessageRequest || !messageDraft.trim()}
+                  className={`mt-4 flex-row items-center justify-center gap-2 rounded-2xl px-4 py-3 ${
+                    isSendingMessageRequest || !messageDraft.trim() ? 'bg-muted' : 'bg-primary'
+                  }`}
+                >
+                  <MessageCircle
+                    size={18}
+                    color={isSendingMessageRequest || !messageDraft.trim() ? '#9CA3AF' : '#FFFFFF'}
+                  />
+                  <Text
+                    className={`font-semibold ${
+                      isSendingMessageRequest || !messageDraft.trim()
+                        ? 'text-muted-foreground'
+                        : 'text-primary-foreground'
+                    }`}
+                  >
+                    {isSendingMessageRequest ? 'Sending...' : 'Send Message Request'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

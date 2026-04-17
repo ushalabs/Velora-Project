@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Text,
@@ -18,8 +17,10 @@ import {
   subscribeToFriends,
   type FriendSummary,
 } from '@/lib/firestore';
+import { useThemedAlert } from '@/components/themed-alert-provider';
 
 export default function CreateGroupScreen() {
+  const { showAlert } = useThemedAlert();
   const [friends, setFriends] = useState<FriendSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [groupName, setGroupName] = useState('');
@@ -52,17 +53,17 @@ export default function CreateGroupScreen() {
   const handleCreateGroup = async () => {
     const currentUser = auth.currentUser;
     if (!currentUser) {
-      Alert.alert('Error', 'You need to sign in again.');
+      showAlert('Error', 'You need to sign in again.');
       return;
     }
 
     if (!groupName.trim()) {
-      Alert.alert('Missing name', 'Please enter a group name.');
+      showAlert('Missing name', 'Please enter a group name.');
       return;
     }
 
     if (selectedIds.length === 0) {
-      Alert.alert('Add members', 'Please choose at least one friend.');
+      showAlert('Add members', 'Please choose at least one friend.');
       return;
     }
 
@@ -75,7 +76,7 @@ export default function CreateGroupScreen() {
 
       router.replace({ pathname: '/chat/[id]', params: { id: conversationId } });
     } catch {
-      Alert.alert('Error', 'Failed to create the group.');
+      showAlert('Error', 'Failed to create the group.');
     } finally {
       setIsSaving(false);
     }

@@ -13,6 +13,8 @@ import {
   Modal,
   Keyboard,
   KeyboardEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -27,7 +29,6 @@ import {
   Send,
   Smile,
   Sticker,
-  Users,
   Video as VideoIcon,
 } from "lucide-react-native";
 import * as ImagePicker from 'expo-image-picker';
@@ -49,27 +50,77 @@ import {
   deleteMessageForSelf,
   getConversationId,
   getConversationInfo,
-  hideConversationForUser,
-  leaveGroupConversation,
   sendConversationMediaMessage,
   sendConversationMessage,
   sendConversationStickerMessage,
+  markConversationSeen,
   subscribeToConversationInfo,
   subscribeToConversationMembers,
   subscribeToMessages,
   subscribeToUserProfile,
+  toggleConversationMessageReaction,
   type ChatMessage,
   type ConversationInfo,
   type FoundUser,
+  updateConversationMessage,
+  updateConversationTyping,
 } from '@/lib/firestore';
 import { uploadToCloudinary } from '@/lib/cloudinary';
 import { sendMessagePushNotification } from '@/lib/push-api';
+import ThemedActionSheet, { type ThemedActionSheetOption } from '@/components/themed-action-sheet';
 
 const QUICK_EMOJIS = ['\u{1F600}', '\u{1F602}', '\u{1F60D}', '\u{1F979}', '\u{1F62D}', '\u{1F60E}', '\u{1F525}', '\u{2764}\u{FE0F}', '\u{1F44D}', '\u{1F389}', '\u{1F91D}', '\u{2728}'];
 const STICKER_EMOJIS = ['\u{1F388}', '\u{1F389}', '\u{1F496}', '\u{1F525}', '\u{1F602}', '\u{1F60E}', '\u{1F973}', '\u{1F90D}'];
+const MESSAGE_REACTIONS = ['❤️', '😡', '😂', '😢', '👍'];
 
 const getSenderName = (user: typeof auth.currentUser) =>
   user?.displayName?.trim() || user?.email?.split('@')[0] || 'Someone';
+
+const formatMessageTime = (timestamp?: number) =>
+  new Date(timestamp || Date.now()).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+const formatActiveStatus = (profile: FoundUser | null, now = Date.now()) => {
+  if (!profile || profile.showActiveStatus === false || !profile.lastActiveAt) {
+    return '';
+  }
+
+  const diffMs = now - profile.lastActiveAt;
+  if (diffMs < 0) {
+    return profile.isActive ? 'Active now' : '';
+  }
+
+  const diffMinutes = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+
+  if (profile.isActive && diffMinutes < 2) {
+    return 'Active now';
+  }
+
+  if (diffHours >= 24) {
+    return '';
+  }
+
+  if (diffHours < 1) {
+    const safeMinutes = Math.max(1, diffMinutes);
+    return `Active ${safeMinutes} minute${safeMinutes === 1 ? '' : 's'} ago`;
+  }
+
+  return `Active ${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+};
+
+const isEmojiOnlyText = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  try {
+    return /^[\p{Emoji_Presentation}\p{Emoji}\uFE0F\s]+$/u.test(trimmed);
+  } catch {
+    return false;
+  }
+};
 
 function formatDuration(durationMs?: number) {
   const totalSeconds = Math.max(0, Math.round((durationMs || 0) / 1000));
@@ -135,16 +186,74 @@ function FullscreenVideo({ uri }: { uri: string }) {
 }
 
 function InlineVideoPreview({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (videoPlayer) => {
+    videoPlayer.loop = false;
+    videoPlayer.pause();
+  });
+
   return (
     <View className="relative h-56 w-56 items-center justify-center overflow-hidden rounded-2xl bg-black/10">
-      <Image
-        source={{ uri }}
-        className="h-full w-full"
-        resizeMode="cover"
+      <VideoView
+        player={player}
+        style={{ width: '100%', height: '100%' }}
+        nativeControls={false}
+        contentFit="cover"
       />
       <View className="absolute h-16 w-16 items-center justify-center rounded-full bg-black/55">
         <Play size={26} color="#FFFFFF" fill="#FFFFFF" />
       </View>
+    </View>
+  );
+}
+
+function StoryReplyPreview({
+  replyTo,
+  isUser,
+}: {
+  replyTo: NonNullable<ChatMessage['replyTo']>;
+  isUser: boolean;
+}) {
+  const storyLabel =
+    replyTo.ownerUsername === auth.currentUser?.displayName
+      ? 'your story'
+      : `${replyTo.ownerUsername}'s story`;
+
+  return (
+    <View
+      className={`mb-2 overflow-hidden rounded-2xl border px-3 py-2 ${
+        isUser
+          ? 'border-primary-foreground/20 bg-primary-foreground/10'
+          : 'border-border bg-black/5'
+      }`}
+    >
+      <Text
+        className={`text-xs font-semibold ${
+          isUser ? 'text-primary-foreground/80' : 'text-primary'
+        }`}
+      >
+        Replied to {storyLabel}
+      </Text>
+
+      {replyTo.storyType === 'text' && replyTo.storyText ? (
+        <Text
+          numberOfLines={2}
+          className={`mt-1 text-sm ${
+            isUser ? 'text-primary-foreground/90' : 'text-foreground'
+          }`}
+        >
+          {replyTo.storyText}
+        </Text>
+      ) : null}
+
+      {(replyTo.storyType === 'image' || replyTo.storyType === 'video') && replyTo.storyMediaUrl ? (
+        <View className="mt-2 overflow-hidden rounded-xl">
+          <Image
+            source={{ uri: replyTo.storyMediaUrl }}
+            className="h-20 w-20 rounded-xl"
+            resizeMode="cover"
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -154,13 +263,14 @@ export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<ChatMessage>>(null);
+  const inputRef = useRef<TextInput>(null);
   const didInitialScrollRef = useRef(false);
   const sentByMeRef = useRef(false);
+  const isNearBottomRef = useRef(true);
+  const lastTapRef = useRef<{ messageId: string; at: number } | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isPositionedAtBottom, setIsPositionedAtBottom] = useState(false);
   const [composerHeight, setComposerHeight] = useState(92);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [inputText, setInputText] = useState("");
   const [friend, setFriend] = useState<FoundUser | null>(null);
   const [conversationInfo, setConversationInfo] = useState<ConversationInfo | null>(null);
@@ -174,6 +284,18 @@ export default function ChatScreen() {
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 250);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingStateRef = useRef(false);
+  const lastSeenMessageRef = useRef<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [statusClock, setStatusClock] = useState(Date.now());
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [actionSheetConfig, setActionSheetConfig] = useState<{
+    title: string;
+    message?: string;
+    reactions?: ThemedActionSheetOption[];
+    options: ThemedActionSheetOption[];
+  } | null>(null);
 
   const currentUser = auth.currentUser;
   const routeId = id || '';
@@ -191,9 +313,32 @@ export default function ChatScreen() {
     setShowStickerPicker(false);
   };
 
+  const setTypingState = (isTyping: boolean) => {
+    if (!currentUser || !conversationId || !hasConversation) {
+      return;
+    }
+
+    if (lastTypingStateRef.current === isTyping) {
+      return;
+    }
+
+    lastTypingStateRef.current = isTyping;
+    void updateConversationTyping(conversationId, currentUser.uid, isTyping).catch(() => {});
+  };
+
+  const scheduleTypingReset = () => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      setTypingState(false);
+    }, 1800);
+  };
+
   const scrollToBottom = (animated: boolean) => {
     requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({ animated });
+      listRef.current?.scrollToOffset({ offset: 0, animated });
     });
   };
 
@@ -201,12 +346,12 @@ export default function ChatScreen() {
     if (!conversationId) {
       setMessages([]);
       setHasConversation(false);
-      setIsPositionedAtBottom(true);
+      isNearBottomRef.current = true;
       return;
     }
 
     didInitialScrollRef.current = false;
-    setIsPositionedAtBottom(false);
+    isNearBottomRef.current = true;
   }, [conversationId]);
 
   useEffect(() => {
@@ -266,6 +411,10 @@ export default function ChatScreen() {
       setConversationInfo(null);
       const directConversationId = getConversationId(currentUser.uid, routeId);
       setHasConversation(await getConversationInfo(directConversationId).then(Boolean));
+      unsubscribeConversation = subscribeToConversationInfo(directConversationId, (nextConversation) => {
+        setConversationInfo(nextConversation);
+        setHasConversation(Boolean(nextConversation));
+      });
       unsubscribeProfile = subscribeToUserProfile(routeId, (nextFriend) => {
         setFriend(nextFriend);
         setIsLoading(false);
@@ -289,9 +438,23 @@ export default function ChatScreen() {
   }, [currentUser, routeId]);
 
   useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      if (currentUser && conversationId && hasConversation) {
+        void updateConversationTyping(conversationId, currentUser.uid, false).catch(() => {});
+      }
+    };
+  }, [conversationId, currentUser, hasConversation]);
+
+  useEffect(() => {
     const handleKeyboardShow = (event: KeyboardEvent) => {
-      const bottomInset = Platform.OS === 'ios' ? insets.bottom : 0;
-      setKeyboardHeight(Math.max(0, event.endCoordinates.height - bottomInset));
+      setKeyboardHeight(event.endCoordinates.height);
+      if (isNearBottomRef.current) {
+        scrollToBottom(false);
+      }
     };
 
     const handleKeyboardHide = () => {
@@ -308,7 +471,29 @@ export default function ChatScreen() {
       showSubscription.remove();
       hideSubscription.remove();
     };
-  }, [insets.bottom]);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStatusClock(Date.now());
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser || !conversationId || !hasConversation || messages.length === 0) {
+      return;
+    }
+
+    const latestMessage = messages[messages.length - 1];
+    if (!latestMessage || latestMessage.id === lastSeenMessageRef.current) {
+      return;
+    }
+
+    lastSeenMessageRef.current = latestMessage.id;
+    void markConversationSeen(conversationId, currentUser.uid).catch(() => {});
+  }, [messages, currentUser, conversationId, hasConversation]);
 
   const handleSend = async () => {
     if (!currentUser || !conversationId || !hasConversation) {
@@ -339,6 +524,7 @@ export default function ChatScreen() {
           mediaUrl: upload.url,
           durationMs: recorderState.durationMillis,
         });
+        setTypingState(false);
         void sendMessagePushNotification({
           conversationId,
           senderName: getSenderName(currentUser),
@@ -351,7 +537,22 @@ export default function ChatScreen() {
       const trimmedText = inputText.trim();
       if (!trimmedText) return;
 
+      if (editingMessage) {
+        await updateConversationMessage(
+          conversationId,
+          editingMessage.id,
+          currentUser.uid,
+          trimmedText
+        );
+        setInputText('');
+        setEditingMessage(null);
+        closeComposerPanels();
+        return;
+      }
+
       sentByMeRef.current = true;
+      setInputText("");
+      setTypingState(false);
       await sendConversationMessage(currentUser, conversationId, trimmedText);
       void sendMessagePushNotification({
         conversationId,
@@ -359,7 +560,6 @@ export default function ChatScreen() {
         messageType: 'text',
         text: trimmedText,
       }).catch(() => {});
-      setInputText("");
       closeComposerPanels();
     } catch {
       Alert.alert('Error', 'Failed to send message. Please try again.');
@@ -424,6 +624,30 @@ export default function ChatScreen() {
     }
   };
 
+  const handleMessageTap = (message: ChatMessage) => {
+    if (!currentUser || !conversationId || message.deletedForAll || message.type === 'system') {
+      return;
+    }
+
+    const now = Date.now();
+    if (
+      lastTapRef.current &&
+      lastTapRef.current.messageId === message.id &&
+      now - lastTapRef.current.at < 300
+    ) {
+      lastTapRef.current = null;
+      void toggleConversationMessageReaction(currentUser, conversationId, message, '❤️').catch(() => {
+        Alert.alert('Error', 'Failed to react to this message.');
+      });
+      return;
+    }
+
+    lastTapRef.current = {
+      messageId: message.id,
+      at: now,
+    };
+  };
+
   const handleSaveMedia = async () => {
     if (!viewerMessage?.mediaUrl) return;
 
@@ -453,13 +677,41 @@ export default function ChatScreen() {
   };
 
   const handleDeleteMessage = (message: ChatMessage) => {
-    if (!currentUser || !conversationId || message.senderId !== currentUser.uid) {
+    if (!currentUser || !conversationId) {
       return;
     }
 
-    Alert.alert('Delete message', 'Choose how you want to delete this message.', [
-      {
-        text: 'Delete for me',
+    const reactionOptions: ThemedActionSheetOption[] =
+      !message.deletedForAll && message.type !== 'system'
+        ? MESSAGE_REACTIONS.map((emoji) => ({
+            label: emoji,
+            onPress: async () => {
+              try {
+                await toggleConversationMessageReaction(currentUser, conversationId, message, emoji);
+              } catch {
+                Alert.alert('Error', 'Failed to react to this message.');
+              }
+            },
+          }))
+        : [];
+    const options: ThemedActionSheetOption[] = [];
+
+    if (message.senderId === currentUser.uid) {
+      if (message.type === 'text' && !message.deletedForAll) {
+        options.push({
+          label: 'Edit',
+          onPress: () => {
+            setEditingMessage(message);
+            setInputText(message.text);
+            closeComposerPanels();
+            requestAnimationFrame(() => {
+              inputRef.current?.focus();
+            });
+          },
+        });
+      }
+      options.push({
+        label: 'Delete for me only',
         onPress: async () => {
           try {
             await deleteMessageForSelf(conversationId, message.id, currentUser.uid);
@@ -467,10 +719,10 @@ export default function ChatScreen() {
             Alert.alert('Error', 'Failed to delete message for you.');
           }
         },
-      },
-      {
-        text: 'Delete for everyone',
-        style: 'destructive',
+      });
+      options.push({
+        label: 'Delete',
+        destructive: true,
         onPress: async () => {
           try {
             await deleteMessageForEveryone(
@@ -482,67 +734,26 @@ export default function ChatScreen() {
             Alert.alert('Error', 'Failed to delete message for everyone.');
           }
         },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
-
-  const handleConversationOptions = () => {
-    if (!currentUser || !conversationId) return;
-
-    if (isGroupConversation) {
-      Alert.alert(
-        friend?.username || 'Group',
-        'Choose an action for this group.',
-        [
-          {
-            text: 'Delete for me',
-            onPress: async () => {
-              try {
-                await hideConversationForUser(conversationId, currentUser.uid);
-                router.back();
-              } catch {
-                Alert.alert('Error', 'Failed to delete this group for you.');
-              }
-            },
-          },
-          {
-            text: 'Leave group',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await leaveGroupConversation(conversationId, currentUser.uid);
-                router.replace('/(tabs)/friends');
-              } catch {
-                Alert.alert('Error', 'Failed to leave this group.');
-              }
-            },
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-      return;
+      });
+    } else {
+      options.push({
+        label: 'Delete for me only',
+        onPress: async () => {
+          try {
+            await deleteMessageForSelf(conversationId, message.id, currentUser.uid);
+          } catch {
+            Alert.alert('Error', 'Failed to delete message for you.');
+          }
+        },
+      });
     }
 
-    Alert.alert(
-      friend?.username || 'Chat',
-      'Delete this chat for you only?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete for me',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await hideConversationForUser(conversationId, currentUser.uid);
-              router.replace('/(tabs)/friends');
-            } catch {
-              Alert.alert('Error', 'Failed to delete this chat for you.');
-            }
-          },
-        },
-      ]
-    );
+    setActionSheetConfig({
+      title: 'Message options',
+      message: `Sent at ${formatMessageTime(message.createdAt)}`,
+      reactions: reactionOptions,
+      options,
+    });
   };
 
   const handlePickMedia = async (kind: 'image' | 'video') => {
@@ -561,8 +772,8 @@ export default function ChatScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes:
           kind === 'image'
-            ? ImagePicker.MediaTypeOptions.Images
-            : ImagePicker.MediaTypeOptions.Videos,
+            ? ['images']
+            : ['videos'],
         allowsEditing: kind === 'image',
         quality: 0.8,
       });
@@ -599,23 +810,60 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isUser = item.senderId === currentUser?.uid;
+    const senderProfile = isGroupConversation
+      ? groupMembers.find((member) => member.id === item.senderId) || null
+      : friend;
+    const groupedReactions = Array.from(
+      (item.reactions || []).reduce((map, reaction) => {
+        const existing = map.get(reaction.emoji) || 0;
+        map.set(reaction.emoji, existing + 1);
+        return map;
+      }, new Map<string, number>())
+    );
+    const isLastOwnMessage =
+      isUser && !item.deletedForAll && Boolean(lastOwnMessageId) && item.id === lastOwnMessageId;
     const isMediaMessage =
       !item.deletedForAll &&
       (item.type === 'image' || item.type === 'video' || item.type === 'audio');
+    const isEmojiOnly = !item.deletedForAll && item.type === 'text' && isEmojiOnlyText(item.text);
+
+    if (item.type === 'system') {
+      return (
+        <View className="mb-3 items-center">
+          <Text className="rounded-full bg-secondary px-4 py-2 text-center text-xs font-medium text-muted-foreground">
+            {item.text}
+          </Text>
+        </View>
+      );
+    }
 
     return (
-      <View className={`mb-3 flex-row ${isUser ? "justify-end" : "justify-start"}`}>
-        <Pressable
-          disabled={!isUser}
-          onLongPress={() => handleDeleteMessage(item)}
-          className={
-            isMediaMessage
-              ? 'max-w-[75%]'
-              : `max-w-[75%] rounded-2xl px-4 py-3 ${
-                  isUser ? 'rounded-tr-sm bg-primary' : 'rounded-tl-sm bg-secondary'
-                }`
-          }
-        >
+      <View className="mb-2">
+        <View className={`flex-row items-end ${isUser ? "justify-end" : "justify-start"}`}>
+          {!isUser ? (
+            <View className="mr-2 h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-primary/20">
+              {senderProfile?.avatar ? (
+                <Image source={{ uri: senderProfile.avatar }} className="h-full w-full" />
+              ) : (
+                <Text className="text-xs font-bold text-primary">
+                  {(senderProfile?.username || item.senderUsername || '?')[0]?.toUpperCase() || '?'}
+                </Text>
+              )}
+            </View>
+          ) : null}
+          <Pressable
+            onPress={() => handleMessageTap(item)}
+            onLongPress={() => handleDeleteMessage(item)}
+            className={
+              isEmojiOnly
+                ? 'max-w-[75%]'
+                : isMediaMessage
+                  ? 'max-w-[75%]'
+                  : `max-w-[64%] rounded-2xl px-3 py-2 ${
+                      isUser ? 'rounded-tr-sm bg-primary' : 'rounded-tl-sm bg-secondary'
+                    }`
+            }
+          >
           {item.deletedForAll ? (
             <Text
               className={`italic ${
@@ -629,7 +877,7 @@ export default function ChatScreen() {
           {!item.deletedForAll && item.type === 'image' && item.mediaUrl ? (
             <Pressable
               onPress={() => handleOpenMedia(item)}
-              onLongPress={isUser ? () => handleDeleteMessage(item) : undefined}
+                onLongPress={() => handleDeleteMessage(item)}
             >
               <Image
                 source={{ uri: item.mediaUrl }}
@@ -642,7 +890,7 @@ export default function ChatScreen() {
           {!item.deletedForAll && item.type === 'video' && item.mediaUrl ? (
             <Pressable
               onPress={() => handleOpenMedia(item)}
-              onLongPress={isUser ? () => handleDeleteMessage(item) : undefined}
+                onLongPress={() => handleDeleteMessage(item)}
             >
               <InlineVideoPreview uri={item.mediaUrl} />
             </Pressable>
@@ -652,7 +900,7 @@ export default function ChatScreen() {
             <AudioMessagePlayer
               uri={item.mediaUrl}
               durationMs={item.durationMs}
-              onLongPress={isUser ? () => handleDeleteMessage(item) : undefined}
+                onLongPress={() => handleDeleteMessage(item)}
             />
           ) : null}
 
@@ -660,13 +908,12 @@ export default function ChatScreen() {
             <Text className="text-6xl">{item.text}</Text>
           ) : null}
 
-          {!item.deletedForAll && item.text ? (
+          {!item.deletedForAll && item.replyTo ? (
+            <StoryReplyPreview replyTo={item.replyTo} isUser={isUser} />
+          ) : null}
+
+          {!item.deletedForAll && item.text && !isEmojiOnly ? (
             <View className={item.mediaUrl || item.type === 'sticker' ? 'mt-3' : ''}>
-              {!isUser && isGroupConversation && item.senderUsername ? (
-                <Text className="mb-1 text-xs font-semibold text-primary">
-                  {item.senderUsername}
-                </Text>
-              ) : null}
               <Text
                 className={`text-base ${
                   isUser ? "text-primary-foreground" : "text-foreground"
@@ -677,44 +924,63 @@ export default function ChatScreen() {
             </View>
           ) : null}
 
-          <Text
-            className={`mt-1 text-xs ${
-              isMediaMessage
-                ? 'text-muted-foreground'
-                : isUser
-                  ? 'text-primary-foreground/70'
-                  : 'text-muted-foreground'
-            }`}
-          >
-            {new Date(item.createdAt || Date.now()).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </Text>
-        </Pressable>
+          {!item.deletedForAll && isEmojiOnly ? (
+            <Text className="text-5xl leading-[56px]">{item.text}</Text>
+          ) : null}
+          </Pressable>
+        </View>
+
+        {!item.deletedForAll && item.type !== 'system' && groupedReactions.length > 0 ? (
+          <View className={`${isUser ? '-mt-2 items-end pr-2' : '-mt-2 items-start pl-10'}`}>
+            <View className="flex-row items-center rounded-full border border-border bg-card px-2 py-1 shadow-sm">
+              {groupedReactions.map(([emoji, count]) => (
+                <View key={emoji} className="mr-1 flex-row items-center">
+                  <Text className="text-xs">{emoji}</Text>
+                  {count > 1 ? (
+                    <Text className="ml-1 text-[10px] font-semibold text-muted-foreground">{count}</Text>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {!isGroupConversation && isLastOwnMessage && hasSeenLastOwnMessage ? (
+          <View className="mt-1 mr-1 items-end">
+            <View className="h-4 w-4 items-center justify-center overflow-hidden rounded-full bg-primary/20">
+              {friend?.avatar ? (
+                <Image source={{ uri: friend.avatar }} className="h-full w-full" />
+              ) : (
+                <Text className="text-[9px] font-bold text-primary">
+                  {friend?.username?.[0]?.toUpperCase() || '?'}
+                </Text>
+              )}
+            </View>
+          </View>
+        ) : null}
+
+        {isGroupConversation && isLastOwnMessage && groupSeenMembers.length > 0 ? (
+          <View className="mt-1 mr-1 flex-row justify-end">
+            {groupSeenMembers.slice(0, 6).map((member, index) => (
+              <View
+                key={member.id}
+                className="h-4 w-4 items-center justify-center overflow-hidden rounded-full border border-background bg-primary/20"
+                style={{ marginLeft: index === 0 ? 0 : -4 }}
+              >
+                {member.avatar ? (
+                  <Image source={{ uri: member.avatar }} className="h-full w-full" />
+                ) : (
+                  <Text className="text-[8px] font-bold text-primary">
+                    {member.username?.[0]?.toUpperCase() || '?'}
+                  </Text>
+                )}
+              </View>
+            ))}
+          </View>
+        ) : null}
       </View>
     );
   };
-
-  const EmptyState = () => (
-    <View className="items-center justify-center px-8 py-20">
-      <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-secondary">
-        <Send
-          className="text-secondary-foreground"
-          size={32}
-          strokeWidth={1.5}
-        />
-      </View>
-      <Text className="mb-2 text-xl font-semibold text-foreground">
-        {hasConversation ? 'No messages yet' : 'Waiting for acceptance'}
-      </Text>
-      <Text className="text-center text-muted-foreground">
-        {hasConversation
-          ? `Say hello to ${friend?.username || 'your friend'} and start the conversation!`
-          : `${friend?.username || 'This user'} needs to accept the friend request before you can chat.`}
-      </Text>
-    </View>
-  );
 
   if (isLoading) {
     return (
@@ -725,6 +991,78 @@ export default function ChatScreen() {
   }
 
   const showSendButton = recorderState.isRecording || inputText.trim().length > 0;
+  const displayMessages = [...messages].sort(
+    (first, second) => first.createdAt - second.createdAt
+  );
+  const otherTypingUserIds = Object.entries(conversationInfo?.typingBy || {})
+    .filter(([userId, isTyping]) => userId !== currentUser?.uid && isTyping)
+    .map(([userId]) => userId);
+  const typingLabel = isGroupConversation
+    ? (() => {
+        const typingNames = groupMembers
+          .filter((member) => otherTypingUserIds.includes(member.id))
+          .map((member) => member.username);
+        if (typingNames.length === 0) return '';
+        if (typingNames.length === 1) return `${typingNames[0]} is typing...`;
+        return `${typingNames[0]} and ${typingNames.length - 1} others are typing...`;
+      })()
+    : otherTypingUserIds.length > 0
+      ? `${friend?.username || 'Someone'} is typing...`
+      : '';
+  const otherUserSeenAt =
+    !isGroupConversation && friend?.id
+      ? conversationInfo?.lastSeenBy?.[friend.id] || 0
+      : 0;
+  const lastOwnMessageId = [...displayMessages]
+    .reverse()
+    .find((message) => message.senderId === currentUser?.uid && !message.deletedForAll)?.id;
+  const lastOwnMessageTime =
+    displayMessages.find((message) => message.id === lastOwnMessageId)?.createdAt || 0;
+  const hasSeenLastOwnMessage =
+    !isGroupConversation && Boolean(lastOwnMessageId) && otherUserSeenAt >= lastOwnMessageTime;
+  const groupSeenMembers =
+    isGroupConversation && Boolean(lastOwnMessageId)
+      ? groupMembers.filter(
+          (member) =>
+            member.id !== currentUser?.uid &&
+            (conversationInfo?.lastSeenBy?.[member.id] || 0) >= lastOwnMessageTime
+        )
+      : [];
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    isNearBottomRef.current = event.nativeEvent.contentOffset.y < 80;
+  };
+
+  const openFriendProfile = () => {
+    if (!friend || isGroupConversation) {
+      return;
+    }
+
+    router.push({ pathname: '/user/[id]', params: { id: friend.id } });
+  };
+
+  const openConversationDetails = () => {
+    if (!conversationId) {
+      return;
+    }
+
+    router.push({
+      pathname: '/chat-details/[id]',
+      params: {
+        id: conversationId,
+        userId: !isGroupConversation && friend?.id ? friend.id : '',
+      },
+    });
+  };
+
+  const listData = [...displayMessages].reverse();
+  const safeBottomInset = Math.max(insets.bottom, 12);
+  const listBottomGap = composerHeight + keyboardHeight + 4;
+  const activeStatusLabel = !isGroupConversation ? formatActiveStatus(friend, statusClock) : '';
+  const displayFriendName =
+    !isGroupConversation && friend?.id && conversationInfo?.nicknamesByUserId?.[friend.id]
+      ? conversationInfo.nicknamesByUserId[friend.id]
+      : friend?.username || 'Friend';
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top", "bottom"]}>
@@ -734,6 +1072,11 @@ export default function ChatScreen() {
         </TouchableOpacity>
 
         <View className="ml-2 flex-1 flex-row items-center">
+          <TouchableOpacity
+            onPress={openFriendProfile}
+            disabled={isGroupConversation}
+            activeOpacity={isGroupConversation ? 1 : 0.8}
+          >
           <View className="mr-3 h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-primary/20">
             {friend?.avatar ? (
               <Image source={{ uri: friend.avatar }} className="h-full w-full" />
@@ -745,33 +1088,26 @@ export default function ChatScreen() {
               </View>
             )}
           </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={openConversationDetails}
+            activeOpacity={0.8}
+            className="flex-1"
+          >
           <View>
             <Text className="text-base font-semibold text-foreground">
-              {friend?.username || 'Friend'}
+              {displayFriendName}
             </Text>
             <Text className="text-xs text-muted-foreground">
-              {isGroupConversation ? `${groupMembers.length} members` : 'Realtime chat'}
+              {typingLabel || activeStatusLabel || (isGroupConversation ? `${groupMembers.length} members` : '')}
             </Text>
           </View>
+          </TouchableOpacity>
         </View>
 
         <View className="flex-row items-center gap-2">
-          {isGroupConversation ? (
-            <TouchableOpacity
-              onPress={() =>
-                router.push({
-                  pathname: '/group-manage/[id]',
-                  params: { id: conversationId },
-                })
-              }
-              className="h-10 w-10 items-center justify-center rounded-full bg-secondary"
-            >
-              <Users className="text-foreground" size={18} />
-            </TouchableOpacity>
-          ) : null}
-
           <TouchableOpacity
-            onPress={handleConversationOptions}
+            onPress={openConversationDetails}
             className="h-10 w-10 items-center justify-center rounded-full bg-secondary"
           >
             <MoreVertical className="text-foreground" size={18} />
@@ -779,62 +1115,51 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      <View className="flex-1" style={{ paddingBottom: keyboardHeight }}>
+      <View className="flex-1">
         <FlatList
           ref={listRef}
-          data={messages}
+          data={listData}
+          inverted
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{
             padding: 16,
-            paddingBottom: composerHeight + 12,
-            flexGrow: messages.length === 0 ? 1 : 0,
-            justifyContent: messages.length === 0 ? 'center' : 'flex-start',
+            paddingTop: listBottomGap,
+            flexGrow: listData.length === 0 ? 1 : 0,
+            justifyContent: listData.length === 0 ? 'flex-end' : 'flex-start',
           }}
-          style={{ opacity: isPositionedAtBottom ? 1 : 0 }}
-          ListEmptyComponent={<EmptyState />}
+          ListEmptyComponent={null}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           onTouchStart={closeComposerPanels}
           onScrollBeginDrag={closeComposerPanels}
-          onLayout={() => {
-            if (!didInitialScrollRef.current && messages.length > 0) {
-              didInitialScrollRef.current = true;
-              scrollToBottom(false);
-              setIsPositionedAtBottom(true);
-              return;
-            }
-
-            if (messages.length === 0) {
-              setIsPositionedAtBottom(true);
-            }
-          }}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           onContentSizeChange={() => {
-            if (!didInitialScrollRef.current && messages.length > 0) {
+            if (!didInitialScrollRef.current && listData.length > 0) {
               didInitialScrollRef.current = true;
               scrollToBottom(false);
-              setIsPositionedAtBottom(true);
-              return;
-            }
-
-            if (messages.length === 0) {
-              setIsPositionedAtBottom(true);
               return;
             }
 
             if (sentByMeRef.current) {
               sentByMeRef.current = false;
               scrollToBottom(true);
+              return;
+            }
+
+            if (isNearBottomRef.current) {
+              scrollToBottom(false);
             }
           }}
         />
 
         <View
           onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
-          className="absolute inset-x-0 bottom-0 border-t border-border bg-background"
+          className="absolute inset-x-0 border-t border-border bg-background"
           style={{
             bottom: keyboardHeight,
-            paddingBottom: Math.max(insets.bottom, 12),
+            paddingBottom: safeBottomInset,
           }}
         >
           {showAttachmentBar ? (
@@ -915,6 +1240,25 @@ export default function ChatScreen() {
           ) : null}
 
           <View className="bg-background p-4">
+            {editingMessage ? (
+              <View className="mb-3 flex-row items-center justify-between rounded-2xl border border-[#E9D5FF] bg-[#FAF5FF] px-4 py-3">
+                <View className="flex-1 pr-3">
+                  <Text className="text-xs font-semibold uppercase tracking-wide text-[#7C3AED]">
+                    Editing message
+                  </Text>
+                  <Text numberOfLines={1} className="mt-1 text-sm text-foreground">
+                    {editingMessage.text}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => {
+                  setEditingMessage(null);
+                  setInputText('');
+                }}>
+                  <Text className="font-semibold text-[#7C3AED]">Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {recorderState.isRecording ? (
               <View className="mb-3 rounded-2xl bg-destructive/10 px-4 py-3">
                 <Text className="font-semibold text-foreground">
@@ -938,9 +1282,18 @@ export default function ChatScreen() {
 
               <View className="min-h-[48px] flex-1 justify-center rounded-2xl border border-border bg-input px-4">
                 <TextInput
+                  ref={inputRef}
                   value={inputText}
-                  onChangeText={setInputText}
+                  onChangeText={(value) => {
+                    setInputText(value);
+                    const isTyping = value.trim().length > 0;
+                    setTypingState(isTyping);
+                    if (isTyping) {
+                      scheduleTypingReset();
+                    }
+                  }}
                   onFocus={closeComposerPanels}
+                  onBlur={() => setTypingState(false)}
                   placeholder="Type a message..."
                   placeholderTextColor="#9CA3AF"
                   className="py-3 text-base text-foreground"
@@ -977,6 +1330,7 @@ export default function ChatScreen() {
                 Uploading media...
               </Text>
             ) : null}
+
           </View>
         </View>
       </View>
@@ -1012,6 +1366,17 @@ export default function ChatScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      <ThemedActionSheet
+        visible={Boolean(actionSheetConfig)}
+        title={actionSheetConfig?.title || ''}
+        message={actionSheetConfig?.message}
+        reactions={actionSheetConfig?.reactions || []}
+        options={actionSheetConfig?.options || []}
+        onClose={() => setActionSheetConfig(null)}
+      />
     </SafeAreaView>
   );
 }
+
+

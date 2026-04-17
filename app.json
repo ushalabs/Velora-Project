@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "BrightFlow",
+    "name": "Velora",
     "slug": "brightflow",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "exponativewind",
+    "scheme": "velora",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -13,9 +13,24 @@
     },
     "android": {
       "package": "com.velora.chat",
+      "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "com.googleusercontent.apps.792599884229-upbrttvq1ni27i7pvo8f7nb2shffc1mb"
+            }
+          ]
+        }
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#5B21B6",
         "foregroundImage": "./assets/images/icon.png",
         "monochromeImage": "./assets/images/icon.png"
       },
@@ -45,7 +60,13 @@
           }
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#8B5CF6"
+        }
+      ],
       "expo-video",
       "expo-audio"
     ],

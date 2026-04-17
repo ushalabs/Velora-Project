@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "792599884229",
+    "project_id": "velora-f0fc6",
+    "storage_bucket": "velora-f0fc6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:792599884229:android:64483051cd4a13f848dbac",
+        "android_client_info": {
+          "package_name": "com.velora.chat"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "792599884229-upbrttvq1ni27i7pvo8f7nb2shffc1mb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.velora.chat",
+            "certificate_hash": "050a54c3fa9b002e79a5ba819ee21abf5472c277"
+          }
+        },
+        {
+          "client_id": "792599884229-m9e0gp8tuhj30cu075062j5tlmghptna.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8zRH6VfEvBsO5XstulhGZ0ur5peTZINc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "792599884229-m9e0gp8tuhj30cu075062j5tlmghptna.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

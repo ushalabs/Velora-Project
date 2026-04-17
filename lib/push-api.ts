@@ -42,3 +42,35 @@ export const sendMessagePushNotification = async (options: {
     }),
   });
 };
+
+export const sendUserPushNotification = async (options: {
+  recipientUserIds: string[];
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+}) => {
+  if (!PUSH_API_URL || options.recipientUserIds.length === 0) {
+    return;
+  }
+
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    return;
+  }
+
+  const idToken = await currentUser.getIdToken();
+
+  await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/api/send-social-notification`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({
+      recipientUserIds: options.recipientUserIds,
+      title: options.title,
+      body: options.body,
+      data: options.data || {},
+    }),
+  });
+};

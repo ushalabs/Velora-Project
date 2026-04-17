@@ -1,81 +1,154 @@
 import { Stack } from 'expo-router';
 import '@/global.css';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { ThemedAlertProvider } from '@/components/themed-alert-provider';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
-import { onAuthStateChanged } from '@firebase/auth';
-import { auth } from '@/lib/firebase';
-import { upsertUserProfile } from '@/lib/firestore';
+import { AppState, LogBox } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { auth, subscribeToAuthProfile } from '@/lib/firebase';
 import {
   configureForegroundNotifications,
   registerPushToken,
   unregisterPushToken,
 } from '@/lib/notifications';
+import { navigateFromNotificationPayload } from '@/lib/notification-routing';
+import { updateUserPresence } from '@/lib/firestore';
 
 export default function RootLayout() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const previousUserIdRef = useRef<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
+    LogBox.ignoreLogs([
+      'SafeAreaView has been deprecated',
+    ]);
+
     void configureForegroundNotifications().catch(() => {
-      // Keep app startup safe even if notification setup is unavailable.
+      // Keep app startup safe even if notifications are unavailable.
     });
+  }, []);
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsAuthenticated(!!user);
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthProfile((user) => {
+      void (async () => {
+        if (user?.uid) {
+          previousUserIdRef.current = user.uid;
+          await updateUserPresence(user.uid, true).catch(() => {});
+          await registerPushToken(user.uid).catch(() => {
+            // Notifications should never block auth flow.
+          });
+          return;
+        }
 
-      if (user) {
-        previousUserIdRef.current = user.uid;
+        if (!previousUserIdRef.current) {
+          return;
+        }
 
-        void upsertUserProfile(user).catch(() => {
-          // Do not block app startup on profile sync failures.
-        });
-
-        void registerPushToken(user.uid).catch(() => {
-          // Notifications should never block auth/bootstrap flow.
-        });
-      } else if (previousUserIdRef.current) {
         const lastUserId = previousUserIdRef.current;
         previousUserIdRef.current = null;
+        await updateUserPresence(lastUserId, false).catch(() => {});
 
-        void unregisterPushToken(lastUserId).catch(() => {
-          // Ignore logout cleanup failures to keep auth flow safe.
+        await unregisterPushToken(lastUserId).catch(() => {
+          // Ignore logout cleanup failures.
         });
-      }
+      })();
     });
 
     return unsubscribe;
   }, []);
 
-  if (isAuthenticated === null) {
-    return (
-      <ThemeProvider>
-        <SafeAreaProvider>
-          <View className="flex-1 items-center justify-center bg-background">
-            <ActivityIndicator size="large" color="#A78BFA" />
-          </View>
-        </SafeAreaProvider>
-      </ThemeProvider>
-    );
-  }
+  useEffect(() => {
+    let isMounted = true;
+    let subscription: { remove: () => void } | null = null;
+
+    const handleNotificationNavigation = (data: unknown) => {
+      const currentUserId = auth.currentUser?.uid || previousUserIdRef.current || null;
+      navigateFromNotificationPayload(data, currentUserId);
+    };
+
+    void (async () => {
+      try {
+        const Notifications = await import('expo-notifications');
+        if (!isMounted) return;
+
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        if (lastResponse) {
+          handleNotificationNavigation(lastResponse.notification.request.content.data);
+        }
+
+        subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+          handleNotificationNavigation(response.notification.request.content.data);
+        });
+      } catch {
+        // Keep startup stable even if notification response listener fails.
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      subscription?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+    const startHeartbeat = () => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+
+      heartbeatInterval = setInterval(() => {
+        const userId = auth.currentUser?.uid || previousUserIdRef.current;
+        if (!userId || appStateRef.current !== 'active') {
+          return;
+        }
+
+        void updateUserPresence(userId, true).catch(() => {});
+      }, 45000);
+    };
+
+    startHeartbeat();
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      const previousAppState = appStateRef.current;
+      appStateRef.current = nextAppState;
+      const userId = auth.currentUser?.uid || previousUserIdRef.current;
+
+      if (!userId) {
+        return;
+      }
+
+      if (nextAppState === 'active') {
+        void updateUserPresence(userId, true).catch(() => {});
+      } else if (previousAppState === 'active') {
+        void updateUserPresence(userId, false).catch(() => {});
+      }
+    });
+
+    return () => {
+      subscription.remove();
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+    };
+  }, []);
 
   return (
     <ThemeProvider>
       <SafeAreaProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          {!isAuthenticated ? (
-            <Stack.Screen name="auth" options={{ headerShown: false }} />
-          ) : (
-            <>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
-              <Stack.Screen name="add-friend" options={{ headerShown: false }} />
-              <Stack.Screen name="create-group" options={{ headerShown: false }} />
-              <Stack.Screen name="group-manage/[id]" options={{ headerShown: false }} />
-            </>
-          )}
-        </Stack>
+        <ThemedAlertProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="auth" />
+            <Stack.Screen name="oauthredirect" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="chat/[id]" />
+            <Stack.Screen name="add-friend" />
+            <Stack.Screen name="create-group" />
+            <Stack.Screen name="group-manage/[id]" />
+          </Stack>
+        </ThemedAlertProvider>
       </SafeAreaProvider>
     </ThemeProvider>
   );

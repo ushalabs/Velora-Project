@@ -1,0 +1,23 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg1" x1="120" y1="80" x2="900" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A78BFA"/>
+      <stop offset="0.5" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#5B21B6"/>
+    </linearGradient>
+    <linearGradient id="glass1" x1="260" y1="200" x2="760" y2="824" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="white" stop-opacity="0.08"/>
+    </linearGradient>
+    <filter id="shadow1" x="170" y="174" width="684" height="664" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#3B0764" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="72" y="72" width="880" height="880" rx="240" fill="url(#bg1)"/>
+  <circle cx="320" cy="258" r="120" fill="white" fill-opacity="0.14"/>
+  <circle cx="796" cy="792" r="156" fill="white" fill-opacity="0.08"/>
+  <g filter="url(#shadow1)">
+    <path d="M256 280C256 244.654 284.654 216 320 216H704C739.346 216 768 244.654 768 280V566C768 601.346 739.346 630 704 630H496L356 762C332.505 784.157 296 767.503 296 735V630H320C284.654 630 256 601.346 256 566V280Z" fill="url(#glass1)" stroke="white" stroke-opacity="0.22" stroke-width="4"/>
+    <path d="M365 355L512 645L659 355" stroke="white" stroke-width="74" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

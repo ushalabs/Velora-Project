@@ -1,0 +1,22 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg3" x1="118" y1="112" x2="910" y2="916" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5EDFF"/>
+      <stop offset="0.45" stop-color="#DDD6FE"/>
+      <stop offset="1" stop-color="#A78BFA"/>
+    </linearGradient>
+    <linearGradient id="mark3" x1="344" y1="266" x2="670" y2="774" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1F1147"/>
+      <stop offset="1" stop-color="#6D28D9"/>
+    </linearGradient>
+    <filter id="shadow3" x="198" y="165" width="628" height="694" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#6D28D9" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect x="72" y="72" width="880" height="880" rx="240" fill="url(#bg3)"/>
+  <path d="M228 288C228 248.235 260.235 216 300 216H724C763.765 216 796 248.235 796 288V620C796 659.765 763.765 692 724 692H540L399 810C374.693 830.357 338 813.071 338 781.362V692H300C260.235 692 228 659.765 228 620V288Z" fill="white" fill-opacity="0.72"/>
+  <g filter="url(#shadow3)">
+    <path d="M360 303L512 703L664 303" stroke="url(#mark3)" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <path d="M244 746C378 836 629 861 780 738" stroke="#7C3AED" stroke-opacity="0.18" stroke-width="36" stroke-linecap="round"/>
+</svg>
